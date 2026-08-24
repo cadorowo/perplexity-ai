@@ -272,8 +272,15 @@ def parse_nested_json_response(content_json: dict) -> dict:
     """
     Parse nested JSON response from Perplexity API.
 
-    Extracts answer and chunks from the nested 'text' field structure:
-    text (JSON string) -> list of steps -> FINAL step -> answer (JSON string)
+    Extracts answer and chunks from the response. Handles two response
+    schemas:
+
+    - Legacy: nested 'text' field structure
+      text (JSON string) -> list of steps -> FINAL step -> answer (JSON string)
+    - Current: 'blocks' field structure
+      blocks[N].markdown_block.answer where intended_usage == 'ask_text'
+      (answer is streamed across markdown_block.chunks and assembled in .answer)
+      citations live in the 'web_results' block's web_result_block.web_results
 
     Args:
         content_json: Response JSON from API
@@ -289,6 +296,28 @@ def parse_nested_json_response(content_json: dict) -> dict:
 
     if not isinstance(content_json, dict):
         return content_json
+
+    blocks = content_json.get("blocks")
+    if isinstance(blocks, list):
+        citations = []
+        for block in blocks:
+            if not isinstance(block, dict):
+                continue
+            usage = block.get("intended_usage")
+            if usage == "ask_text":
+                markdown_block = block.get("markdown_block")
+                if isinstance(markdown_block, dict) and markdown_block.get("answer"):
+                    content_json["answer"] = markdown_block.get("answer", "")
+            elif usage == "web_results":
+                web_result_block = block.get("web_result_block")
+                if isinstance(web_result_block, dict):
+                    results = web_result_block.get("web_results")
+                    if isinstance(results, list):
+                        citations.extend(
+                            r for r in results if isinstance(r, dict)
+                        )
+        if citations:
+            content_json["chunks"] = citations
 
     if "text" in content_json and content_json["text"]:
         try:

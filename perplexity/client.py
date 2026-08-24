@@ -310,6 +310,22 @@ class Client:
                 elif "event: end_of_stream" in content:
                     return
 
+        def final_response():
+            """Return the chunk carrying the assembled answer, falling back to the last chunk."""
+            answer_chunk = None
+            citations = []
+            for chunk in chunks:
+                if not isinstance(chunk, dict):
+                    continue
+                if chunk.get("answer"):
+                    answer_chunk = chunk
+                if chunk.get("chunks"):
+                    citations = chunk["chunks"]
+            selected = answer_chunk or (chunks[-1] if chunks else {})
+            if selected and not selected.get("chunks") and citations:
+                selected["chunks"] = citations
+            return selected
+
         if stream:
             return stream_response(resp)
 
@@ -326,6 +342,6 @@ class Client:
                     continue
 
             elif "event: end_of_stream" in content:
-                return chunks[-1] if chunks else {}
+                return final_response()
 
-        return chunks[-1] if chunks else {}
+        return final_response()

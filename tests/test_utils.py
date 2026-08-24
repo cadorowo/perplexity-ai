@@ -161,3 +161,52 @@ def test_parse_nested_json_response() -> None:
     parsed_inv = parse_nested_json_response(invalid_resp)
     assert parsed_inv["text"] == "not valid json"
 
+    # Case 4: current blocks schema with ask_text block
+    blocks_resp = {
+        "blocks": [
+            {"intended_usage": "search", "markdown_block": {"answer": "ignored"}},
+            {
+                "intended_usage": "ask_text",
+                "markdown_block": {"answer": "Paris is the capital of France."},
+                "chunks": [{"url": "https://example.com"}],
+            },
+        ]
+    }
+    parsed_blocks = parse_nested_json_response(blocks_resp)
+    assert parsed_blocks["answer"] == "Paris is the capital of France."
+
+    # Case 5: streamed chunks (partial) do not claim an answer until assembled
+    streamed_resp = {
+        "blocks": [
+            {
+                "intended_usage": "ask_text",
+                "markdown_block": {
+                    "progress": "in_progress",
+                    "chunks": ["Par", "is is the ", "capital."],
+                },
+            }
+        ]
+    }
+    parsed_streamed = parse_nested_json_response(streamed_resp)
+    assert "answer" not in parsed_streamed
+
+    # Case 6: citations extracted from web_results block
+    cited_resp = {
+        "blocks": [
+            {
+                "intended_usage": "web_results",
+                "web_result_block": {
+                    "web_results": [
+                        {"url": "https://example.com/1", "name": "Example"},
+                        {"url": "https://example.com/2", "name": "Example 2"},
+                    ]
+                },
+            },
+            {"intended_usage": "ask_text", "markdown_block": {"answer": "See sources."}},
+        ]
+    }
+    parsed_cited = parse_nested_json_response(cited_resp)
+    assert parsed_cited["answer"] == "See sources."
+    assert len(parsed_cited["chunks"]) == 2
+    assert parsed_cited["chunks"][0]["url"] == "https://example.com/1"
+

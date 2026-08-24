@@ -76,6 +76,30 @@ def test_client_search_success_mock() -> None:
         assert result.get("answer") == "Python is a language"
 
 
+def test_client_search_blocks_only_format() -> None:
+    with patch("curl_cffi.requests.Session.get") as mock_get, patch(
+        "curl_cffi.requests.Session.post"
+    ) as mock_post:
+        mock_get.return_value = MagicMock(ok=True)
+
+        mock_response_data = {
+            "blocks": [{"intended_usage": "ask_text", "markdown_block": {"answer": "Blocks answer"}}]
+        }
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.iter_lines.return_value = [
+            f"data: {json.dumps(mock_response_data)}".encode("utf-8"),
+            b"event: end_of_stream",
+        ]
+        mock_post.return_value = mock_resp
+
+        cli = Client()
+        result = cli.search("What is the capital of France?", mode="auto")
+        assert isinstance(result, dict)
+        assert result.get("answer") == "Blocks answer"
+
+
 def test_client_search_http_errors() -> None:
     with patch("curl_cffi.requests.Session.get") as mock_get, patch(
         "curl_cffi.requests.Session.post"
