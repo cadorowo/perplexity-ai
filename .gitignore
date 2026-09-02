@@ -41,4 +41,12 @@ ENV/
 
 # Local session cookies (secrets)
 cookies.json
-
+*_cookies.json
+*_state.json
+full_storage_state.json
+.agents/
+.agy-acp/
+server_custodian/
+query_*.py
+SPIKE_AND_RED_STYLE_GUIDE.md
+TESTI*

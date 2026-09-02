@@ -152,13 +152,6 @@ def validate_search_params(
                 f"Valid models: {', '.join(str(m) for m in valid_models)}"
             )
 
-    # Check if model requires own account
-    if model is not None and not own_account:
-        raise ValidationError(
-            "Model selection requires an account with cookies. "
-            "Initialize Client with cookies parameter."
-        )
-
     # Validate sources
     if not isinstance(sources, (list, tuple)):
         raise ValidationError("Sources must be a list or tuple of strings")

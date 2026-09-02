@@ -45,6 +45,9 @@ class Client:
     def __init__(self, cookies: Optional[Dict[str, str]] = None):
         if cookies is None:
             cookies = {}
+        else:
+            # Filter out stale Cloudflare cookies that cause false 429 Cloudflare challenges
+            cookies = {k: v for k, v in cookies.items() if not k.startswith(("__cf", "cf_"))}
         # Initialize an HTTP session with default headers and optional cookies
         self.session = requests.Session(
             headers=DEFAULT_HEADERS.copy(),
@@ -54,7 +57,7 @@ class Client:
 
         # Flags and counters for account and query management
         self.own = bool(cookies)  # Indicates if the client uses its own account
-        self.copilot = 0 if not cookies else float("inf")  # Remaining pro queries
+        self.copilot = 5 if not cookies else float("inf")  # Remaining pro queries
         self.file_upload = 0 if not cookies else float("inf")  # Remaining file uploads
 
         # Regular expression for extracting sign-in links
@@ -159,6 +162,7 @@ class Client:
         language: str = "en-US",
         follow_up: Optional[Dict[str, Any]] = None,
         incognito: bool = False,
+        collection_uuid: Optional[str] = None,
     ) -> Union[Dict[str, Any], Generator[Dict[str, Any], None, None]]:
         """
         Executes a search query on Perplexity AI.
@@ -173,6 +177,7 @@ class Client:
         - language: Language code (ISO 639).
         - follow_up: Information for follow-up queries.
         - incognito: Whether to enable incognito mode.
+        - collection_uuid: Perplexity Project / Collection UUID.
 
         Returns:
         - Response dict or generator yielding response dicts if streaming.
@@ -278,8 +283,25 @@ class Client:
             },
         }
 
+        # Pass collection/project UUID if provided
+        active_collection = collection_uuid or (follow_up.get("collection_uuid") if follow_up and isinstance(follow_up, dict) else None)
+        request_headers = None
+        if active_collection:
+            json_data["collection_uuid"] = active_collection
+            json_data["space_uuid"] = active_collection
+            json_data["params"]["collection_uuid"] = active_collection
+            json_data["params"]["space_uuid"] = active_collection
+            request_headers = self.session.headers.copy()
+            request_headers["referer"] = f"https://www.perplexity.ai/spaces/{active_collection}"
+            request_headers["origin"] = "https://www.perplexity.ai"
+
         # Send the query request and handle the response
-        resp = self.session.post(ENDPOINT_SSE_ASK, json=json_data, stream=True)
+        resp = self.session.post(
+            ENDPOINT_SSE_ASK,
+            json=json_data,
+            headers=request_headers or self.session.headers,
+            stream=True
+        )
 
         if resp.status_code == 429:
             raise RateLimitError("Perplexity rate limit reached. Please wait before retrying.")
@@ -324,6 +346,24 @@ class Client:
             selected = answer_chunk or (chunks[-1] if chunks else {})
             if selected and not selected.get("chunks") and citations:
                 selected["chunks"] = citations
+
+            # Attach thread to collection/space on Perplexity
+            if active_collection and selected and selected.get("backend_uuid"):
+                try:
+                    self.session.post(
+                        "https://www.perplexity.ai/rest/collections/upsert_thread_collection",
+                        json={
+                            "new_collection_uuid": active_collection,
+                            "entry_uuid": selected["backend_uuid"],
+                            "return_collection": False,
+                            "return_thread": False,
+                        },
+                        headers=request_headers or self.session.headers,
+                        timeout=5,
+                    )
+                except Exception:
+                    pass
+
             return selected
 
         if stream:

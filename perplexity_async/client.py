@@ -163,6 +163,7 @@ class Client(AsyncMixin):
         language: str = "en-US",
         follow_up: Optional[Dict[str, Any]] = None,
         incognito: bool = False,
+        collection_uuid: Optional[str] = None,
     ) -> Union[Dict[str, Any], AsyncGenerator[Dict[str, Any], None]]:
         """
         Query function asynchronously.
@@ -177,6 +178,7 @@ class Client(AsyncMixin):
         - language: Language code (ISO 639).
         - follow_up: Information for follow-up queries.
         - incognito: Whether to enable incognito mode.
+        - collection_uuid: Perplexity Project / Collection / Space UUID.
 
         Returns:
         - Response dict or async generator yielding response dicts if streaming.
@@ -278,7 +280,26 @@ class Client(AsyncMixin):
             },
         }
 
-        resp = await self.session.post(ENDPOINT_SSE_ASK, json=json_data, stream=True)
+        # Pass collection/project UUID if provided
+        active_collection = collection_uuid or (
+            follow_up.get("collection_uuid") if follow_up and isinstance(follow_up, dict) else None
+        )
+        request_headers = None
+        if active_collection:
+            json_data["collection_uuid"] = active_collection
+            json_data["space_uuid"] = active_collection
+            json_data["params"]["collection_uuid"] = active_collection
+            json_data["params"]["space_uuid"] = active_collection
+            request_headers = self.session.headers.copy()
+            request_headers["referer"] = f"https://www.perplexity.ai/spaces/{active_collection}"
+            request_headers["origin"] = "https://www.perplexity.ai"
+
+        resp = await self.session.post(
+            ENDPOINT_SSE_ASK,
+            json=json_data,
+            headers=request_headers or self.session.headers,
+            stream=True
+        )
 
         if resp.status_code == 429:
             raise RateLimitError("Perplexity rate limit reached. Please wait before retrying.")
@@ -322,6 +343,21 @@ class Client(AsyncMixin):
                     continue
 
             elif "event: end_of_stream" in content:
-                return chunks[-1] if chunks else {}
+                break
 
-        return chunks[-1] if chunks else {}
+        res = chunks[-1] if chunks else {}
+        if active_collection and res and res.get("backend_uuid"):
+            try:
+                await self.session.post(
+                    "https://www.perplexity.ai/rest/collections/upsert_thread_collection",
+                    json={
+                        "new_collection_uuid": active_collection,
+                        "entry_uuid": res["backend_uuid"],
+                        "return_collection": False,
+                        "return_thread": False,
+                    },
+                    headers=request_headers or self.session.headers,
+                )
+            except Exception:
+                pass
+        return res
