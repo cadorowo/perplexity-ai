@@ -219,6 +219,7 @@ asyncio.run(main())
 
 ## Documentation
 
+- **[Models Guide](docs/MODELS_GUIDE.md)** - 2026 frontier models benchmark, parameter mapping, and Spaces/Collections
 - **[Examples](examples/)** - Practical examples for common use cases
 - **[Changelog](docs/CHANGELOG.md)** - Bug fixes and changes history
 - **[Improvements](docs/IMPROVEMENTS.md)** - Suggested improvements and roadmap
@@ -427,7 +428,8 @@ class Client:
         stream: bool = False,
         language: str = 'en-US',
         follow_up: Optional[Dict] = None,
-        incognito: bool = False
+        incognito: bool = False,
+        collection_uuid: Optional[str] = None
     ) -> Union[Dict, Generator]:
         """
         Search with Perplexity AI.
@@ -442,6 +444,7 @@ class Client:
             language: ISO 639 language code
             follow_up: Previous query for context
             incognito: Enable incognito mode
+            collection_uuid: Optional Perplexity Space / Collection UUID
             
         Returns:
             Response dict with 'answer' key, or generator if stream=True
